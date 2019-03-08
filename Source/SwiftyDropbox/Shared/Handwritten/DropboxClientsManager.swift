@@ -111,6 +111,7 @@ open class DropboxClientsManager {
 
     /// Handle a redirect and automatically initialize the client and save the token.
     public static func handleRedirectURL(_ url: URL) -> DropboxOAuthResult? {
+        print("handwritten")
         precondition(DropboxOAuthManager.sharedOAuthManager != nil, "Call `DropboxClientsManager.setupWithAppKey` before calling this method")
         if let result =  DropboxOAuthManager.sharedOAuthManager.handleRedirectURL(url) {
             switch result {

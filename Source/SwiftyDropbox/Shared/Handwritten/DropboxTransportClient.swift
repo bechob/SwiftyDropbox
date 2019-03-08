@@ -9,17 +9,17 @@ open class DropboxTransportClient {
     public let manager: SessionManager
     public let backgroundManager: SessionManager
     public let longpollManager: SessionManager
-    open var accessToken: String
+    open var accessToken: String?
     open var selectUser: String?
     open var pathRoot: Common.PathRoot?
     var baseHosts: [String: String]
     var userAgent: String
 
-    public convenience init(accessToken: String, selectUser: String? = nil, pathRoot: Common.PathRoot? = nil) {
+    public convenience init(accessToken: String? = nil, selectUser: String? = nil, pathRoot: Common.PathRoot? = nil) {
         self.init(accessToken: accessToken, baseHosts: nil, userAgent: nil, selectUser: selectUser, pathRoot: pathRoot)
     }
 
-    public init(accessToken: String, baseHosts: [String: String]?, userAgent: String?, selectUser: String?, sessionDelegate: SessionDelegate? = nil, backgroundSessionDelegate: SessionDelegate? = nil, longpollSessionDelegate: SessionDelegate? = nil, serverTrustPolicyManager: ServerTrustPolicyManager? = nil, sharedContainerIdentifier: String? = nil, pathRoot: Common.PathRoot? = nil) {
+    public init(accessToken: String?, baseHosts: [String: String]?, userAgent: String?, selectUser: String?, sessionDelegate: SessionDelegate? = nil, backgroundSessionDelegate: SessionDelegate? = nil, longpollSessionDelegate: SessionDelegate? = nil, serverTrustPolicyManager: ServerTrustPolicyManager? = nil, sharedContainerIdentifier: String? = nil, pathRoot: Common.PathRoot? = nil) {
         let config = URLSessionConfiguration.default
         let delegate = sessionDelegate ?? SessionDelegate()
         let serverTrustPolicyManager = serverTrustPolicyManager ?? nil
@@ -50,6 +50,7 @@ open class DropboxTransportClient {
             "api": "https://api.dropbox.com/2",
             "content": "https://api-content.dropbox.com/2",
             "notify": "https://notify.dropboxapi.com/2",
+            "oauth2": "https://api.dropboxapi.com"
             ]
 
         let defaultUserAgent = "OfficialDropboxSwiftSDKv2/\(Constants.versionSDK)"
@@ -234,10 +235,10 @@ open class DropboxTransportClient {
 
     fileprivate func getHeaders(_ routeStyle: RouteStyle, jsonRequest: Data?, host: String) -> HTTPHeaders {
         var headers = ["User-Agent": self.userAgent]
-        let noauth = (host == "notify")
+        let noauth = (host == "notify") || (host == "oauth2")
 
         if (!noauth) {
-            headers["Authorization"] = "Bearer \(self.accessToken)"
+            headers["Authorization"] = "Bearer \(self.accessToken!)"
             if let selectUser = self.selectUser {
                 headers["Dropbox-Api-Select-User"] = selectUser
             }

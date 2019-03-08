@@ -4,6 +4,7 @@
 
 import SystemConfiguration
 import Foundation
+import Alamofire
 
 public protocol SharedApplication {
     func presentErrorMessage(_ message: String, title: String)
@@ -13,6 +14,155 @@ public protocol SharedApplication {
     func presentExternalApp(_ url: URL)
     func canPresentExternalApp(_ url: URL) -> Bool
 }
+
+open class OAuth2 {
+    
+    open class OAuth2TokenArg {
+        public let clientId: String
+        public let grantType: String
+        public let code: String?
+        public let refreshToken: String?
+        public let locale: String?
+        public init(clientId: String, grantType: String, code: String? = nil, refreshToken: String? = nil, locale: String? = nil) {
+            self.clientId = clientId
+            self.grantType = grantType
+            self.code = code
+            self.refreshToken = refreshToken
+            self.locale = locale
+        }
+    }
+    
+    open class OAuth2TokenArgSerializer: JSONSerializer {
+        public init() { }
+        open func serialize(_ value: OAuth2TokenArg) -> JSON {
+            let output = [
+                "client_id": Serialization._StringSerializer.serialize(value.clientId),
+                "grant_type": Serialization._StringSerializer.serialize(value.grantType),
+                "code": NullableSerializer(Serialization._StringSerializer).serialize(value.code),
+                "refresh_token": NullableSerializer(Serialization._StringSerializer).serialize(value.refreshToken),
+                "locale": NullableSerializer(Serialization._StringSerializer).serialize(value.locale),
+            ]
+            return .dictionary(output)
+        }
+        
+        open func deserialize(_ json: JSON) -> OAuth2TokenArg {
+            switch json {
+            case .dictionary(let dict):
+                let clientId = Serialization._StringSerializer.deserialize(dict["client_id"] ?? .null)
+                let grantType = Serialization._StringSerializer.deserialize(dict["grant_type"] ?? .null)
+                let code =  NullableSerializer(Serialization._StringSerializer).deserialize(dict["code"] ?? .null)
+                let refreshToken =  NullableSerializer(Serialization._StringSerializer).deserialize(dict["refresh_token"] ?? .null)
+                let locale =
+                    NullableSerializer(Serialization._StringSerializer).deserialize(dict["locale"] ?? .null)
+                return OAuth2TokenArg(clientId: clientId, grantType: grantType, code: code, refreshToken: refreshToken, locale:locale)
+            default:
+                fatalError("Type error deserializing")
+            }
+        }
+    }
+    
+    open class OAuth2TokenResult {
+        public let accessToken: String
+        public let tokenType: String
+        public let uId: String
+        public let refreshToken: String?
+        public let accountId: String?
+        public let teamId: String?
+        public let expiresIn: Int32?
+        
+        public init(accessToken: String,
+                    tokenType: String,
+                    uId: String,
+                    refreshToken: String?,
+                    accountId: String?,
+                    teamId: String?,
+                    expiresIn: Int32?) {
+            self.accessToken = accessToken
+            self.tokenType = tokenType
+            self.uId = uId
+            self.refreshToken = refreshToken
+            self.accountId = accountId
+            self.teamId = teamId
+            self.expiresIn = expiresIn
+        }
+    }
+    
+    open class OAuth2TokenResultSerializer: JSONSerializer {
+        public init() { }
+        open func serialize(_ value: OAuth2TokenResult) -> JSON {
+            let output = [
+                "access_token": Serialization._StringSerializer.serialize(value.accessToken),
+                "token_type": Serialization._StringSerializer.serialize(value.tokenType),
+                "uid": Serialization._StringSerializer.serialize(value.uId),
+                "refresh_token": NullableSerializer(Serialization._StringSerializer).serialize(value.refreshToken),
+                "expires_in": NullableSerializer(Serialization._Int32Serializer).serialize(value.expiresIn),
+                "team_id": NullableSerializer(Serialization._StringSerializer).serialize(value.teamId),
+            ]
+            return .dictionary(output)
+        }
+        
+        open func deserialize(_ json: JSON) -> OAuth2TokenResult {
+            switch json {
+            case .dictionary(let dict):
+                let accessToken = Serialization._StringSerializer.deserialize(dict["access_token"] ?? .null)
+                let tokenType = Serialization._StringSerializer.deserialize(dict["token_type"] ?? .null)
+                let uId = Serialization._StringSerializer.deserialize(dict["uid"] ?? .null)
+                let accountId = Serialization._StringSerializer.deserialize(dict["account_id"] ?? .null)
+                let teamId = Serialization._StringSerializer.deserialize(dict["team_id"] ?? .null)
+                let refreshToken =  NullableSerializer(Serialization._StringSerializer).deserialize(dict["refresh_token"] ?? .null)
+                let expiresIn =
+                    NullableSerializer(Serialization._Int32Serializer).deserialize(dict["expires_in"] ?? .null)
+                return OAuth2TokenResult(accessToken: accessToken, tokenType: tokenType, uId: uId, refreshToken: refreshToken, accountId: accountId, teamId: teamId, expiresIn: expiresIn)
+            default:
+                fatalError("Type error deserializing")
+            }
+        }
+    }
+    
+    
+    static let oauth2Token = Route(
+        name: "token",
+        version: 1,
+        namespace: "oauth2",
+        deprecated: false,
+        argSerializer: VoidSerializer(),
+        responseSerializer: OAuth2TokenResultSerializer(),
+        errorSerializer: VoidSerializer(),
+        attrs: ["host": "oauth2",
+                "style": "rpc"]
+    )
+    
+    class open func token(url: URL, callback:@escaping (_ accessToken: String?) -> Void) {
+//        let config = URLSessionConfiguration.default
+//        let delegate = SessionDelegate()
+//
+//        let manager = SessionManager(configuration: config, delegate: delegate)
+//
+//        let request = manager.request(url, method: .post)
+//        request.task?.priority = URLSessionTask.highPriority
+//
+//        request.resume()
+//
+//        return request
+        Alamofire.request(url, method:.post).responseJSON { response in
+            print("Request: \(String(describing: response.request))")   // original url request
+            print("Response: \(String(describing: response.response))") // http url response
+            print("Result: \(response.result)")                         // response serialization result
+            
+            if let result = response.result.value {
+                print("JSON \(result)")
+                let json = result as! NSDictionary
+                let _accessToken = json["access_token"] as! String?
+                callback(_accessToken)
+            } else {
+                callback(nil)
+            }
+        }
+    }
+
+    
+}
+
 
 /// Manages access token storage and authentication
 ///
@@ -164,6 +314,25 @@ open class DropboxOAuthManager {
         return components.url!
     }
 
+    func tokenURL(code: String?) -> URL {
+        var components = URLComponents()
+        components.scheme = "https"
+        components.host = "api.dropboxapi.com"
+        components.path = "/oauth2/token"
+        let locale = Bundle.main.preferredLocalizations.first ?? "en"
+        
+        let codeVerifier = UserDefaults.standard.object(forKey: kDBLinkCodeVerifier) as? String
+        
+        components.queryItems = [
+            URLQueryItem(name: "client_id", value: self.appKey),
+            URLQueryItem(name: "locale", value: self.locale?.identifier ?? locale),
+            URLQueryItem(name: "code_verifier", value: codeVerifier!),
+            URLQueryItem(name: "grant_type", value: "authorization_code"),
+            URLQueryItem(name: "code", value: code!),
+        ]
+        return components.url!
+    }
+    
     fileprivate func canHandleURL(_ url: URL) -> Bool {
         for known in self.urls {
             if url.scheme == known.scheme && url.host == known.host && url.path == known.path {
@@ -355,7 +524,8 @@ public enum OAuth2Error {
     }
 }
 
-internal let kDBLinkNonce = "dropbox.sync.nonce"
+internal let kDBLinkState = "dropbox.sync.state"
+internal let kDBLinkCodeVerifier = "dropbox.sync.code.verifier"
 
 /// The result of an authorization attempt.
 public enum DropboxOAuthResult {

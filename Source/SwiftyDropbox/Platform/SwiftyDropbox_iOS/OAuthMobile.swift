@@ -35,6 +35,34 @@ extension DropboxClientsManager {
 open class DropboxMobileOAuthManager: DropboxOAuthManager {
     var dauthRedirectURL: URL
     
+    fileprivate struct AuthUrlParams {
+        var state: String
+        var codeVerifier: String
+        var codeChallenge: String
+        var codeChallengeMethod: String
+        var tokenAccessType: String
+        var scope: String
+        
+        static func createCodeVerifier() -> String {
+            let length = Int.random(in: 43 ... 128)
+            let letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.~"
+            return String((0...length-1).map{ _ in letters.randomElement()! })
+        }
+        
+        init() {
+            codeVerifier = AuthUrlParams.createCodeVerifier()
+            codeChallenge = codeVerifier
+            codeChallengeMethod = "plain"
+            tokenAccessType = "online"
+            state = "oauth2code:\(codeVerifier):plain:\(tokenAccessType)"
+            scope = "test_scope"
+        }
+        
+        func getExtraAuthQueryParams() -> String {
+            return "response_type=code&code_challenge=\(codeChallenge)&code_challenge_method=\(codeChallengeMethod)&token_access_type=\(tokenAccessType)&scope=\(scope)"
+        }
+    }
+
     public override init(appKey: String, host: String) {
         self.dauthRedirectURL = URL(string: "db-\(appKey)://1/connect")!
         super.init(appKey: appKey, host:host)
@@ -60,10 +88,11 @@ open class DropboxMobileOAuthManager: DropboxOAuthManager {
         }
         
         if let scheme = dAuthScheme(sharedApplication) {
-            let nonce = UUID().uuidString
-            UserDefaults.standard.set(nonce, forKey: kDBLinkNonce)
+            let params = AuthUrlParams()
+            UserDefaults.standard.set(params.state, forKey: kDBLinkState)
+            UserDefaults.standard.set(params.codeVerifier, forKey: kDBLinkCodeVerifier)
             UserDefaults.standard.synchronize()
-            sharedApplication.presentExternalApp(dAuthURL(scheme, nonce: nonce))
+            sharedApplication.presentExternalApp(dAuthURL(scheme, authUrlParams: params))
             return true
         }
         return false
@@ -77,27 +106,28 @@ open class DropboxMobileOAuthManager: DropboxOAuthManager {
         return result
     }
 
-    fileprivate func dAuthURL(_ scheme: String, nonce: String?) -> URL {
+    fileprivate func dAuthURL(_ scheme: String, authUrlParams: AuthUrlParams?) -> URL {
         var components = URLComponents()
         components.scheme =  scheme
         components.host = "1"
         components.path = "/connect"
         
-        if let n = nonce {
-            let state = "oauth2:\(n)"
+        if let params = authUrlParams {
             components.queryItems = [
                 URLQueryItem(name: "k", value: self.appKey),
                 URLQueryItem(name: "s", value: ""),
-                URLQueryItem(name: "state", value: state),
+                URLQueryItem(name: "state", value: params.state),
+                URLQueryItem(name: "auth_query_params", value: params.getExtraAuthQueryParams()),
             ]
+            print("\(params.getExtraAuthQueryParams())")
         }
         return components.url!
     }
     
     fileprivate func dAuthScheme(_ sharedApplication: SharedApplication) -> String? {
-        if sharedApplication.canPresentExternalApp(dAuthURL("dbapi-2", nonce: nil)) {
+        if sharedApplication.canPresentExternalApp(dAuthURL("dbapi-2", authUrlParams: nil)) {
             return "dbapi-2"
-        } else if sharedApplication.canPresentExternalApp(dAuthURL("dbapi-8-emm", nonce: nil)) {
+        } else if sharedApplication.canPresentExternalApp(dAuthURL("dbapi-8-emm", authUrlParams: nil)) {
             return "dbapi-8-emm"
         } else {
             return nil
@@ -114,13 +144,24 @@ open class DropboxMobileOAuthManager: DropboxOAuthManager {
                 let kv = pair.components(separatedBy: "=")
                 results.updateValue(kv[1], forKey: kv[0])
             }
-            let state = results["state"]?.components(separatedBy: "%3A") ?? []
             
-            let nonce = UserDefaults.standard.object(forKey: kDBLinkNonce) as? String
-            if state.count == 2 && state[0] == "oauth2" && state[1] == nonce! {
-                let accessToken = results["oauth_token_secret"]!
+//            let codeVerifier = UserDefaults.standard.object(forKey: kDBLinkCodeVerifier) as? String
+            let state = UserDefaults.standard.object(forKey: kDBLinkState) as? String
+            if let state = state {
+                let code = results["oauth_token_secret"]!
                 let uid = results["uid"]!
-                return .success(DropboxAccessToken(accessToken: accessToken, uid: uid))
+                let url = tokenURL(code: code)
+               
+                let callback: (String?) -> Void = { (accessToken: String?) in
+                }
+                OAuth2.token(url: url, callback: callback)
+                
+////                {
+                return .success(DropboxAccessToken(accessToken: code, uid: uid))
+////                } else {
+////                    return .error(.unknown, "Unable to redeem an access token")
+////                }
+                
             } else {
                 return .error(.unknown, "Unable to verify link request")
             }

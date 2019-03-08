@@ -20,7 +20,7 @@ open class DropboxClient: DropboxBase {
     public init(transportClient: DropboxTransportClient) {
         self.transportClient = transportClient
         self.selectUser = transportClient.selectUser
-        self.accessToken = transportClient.accessToken
+        self.accessToken = transportClient.accessToken!
         super.init(client: transportClient)
     }
 

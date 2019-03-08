@@ -10,7 +10,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     var window: UIWindow?
   
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        if (TestData.fullDropboxAppKey.range(of:"<") != nil || TestData.teamMemberFileAccessAppKey.range(of:"<") != nil || TestData.teamMemberManagementAppKey.range(of:"<") != nil) {
+        if (TestData.fullDropboxAppKey.range(of:"<") != nil) {
             print("\n\n\nMust set test data (in TestData.swift) before launching app.\n\n\nTerminating.....\n\n")
             exit(0);
         }
